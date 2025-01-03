@@ -144,7 +144,7 @@ $(document).ready(function () {
 
         // Split into lines, remove blank lines, convert to lowercase, and join back
         var temp = textarea.split('\n')
-                                .map(line => line.trim().toLowerCase())
+                                //.map(line => line.trim().toLowerCase())	//Shifted is neded!
                                 .filter(line => line.trim().length > 0) 
                                 .join('\n');
 
@@ -205,74 +205,75 @@ $(document).ready(function () {
     var basic_error = "";
 
     const TOKENS = [
-        ['restore', 140],
-        ['input#', 132],
-        ['return', 142],
-        ['verify', 149],
-        ['print#', 152],
-        ['right$', 201],
-        ['input', 133],
-        ['gosub', 141],
-        ['print', 153],
-        ['close', 160],
-        ['left$', 200],
-        ['next', 130],
-        ['data', 131],
-        ['read', 135],
-        ['goto', 137],
-        ['stop', 144],
-        ['wait', 146],
-        ['load', 147],
-        ['save', 148],
-        ['poke', 151],
-        ['cont', 154],
-        ['list', 155],
-        ['open', 159],
-        ['tab(', 163],
-        ['spc(', 166],
-        ['then', 167],
-        ['step', 169],
-        ['peek', 194],
-        ['str$', 196],
-        ['chr$', 199],
-        ['mid$', 202],
-        ['end', 128],
-        ['for', 129],
-        ['dim', 134],
-        ['let', 136],
-        ['run', 138],
-        ['rem', 143],
-        ['def', 150],
-        ['clr', 156],
-        ['cmd', 157],
-        ['sys', 158],
-        ['get', 161],
-        ['new', 162],
-        ['not', 168],
-        ['and', 175],
-        ['sgn', 180],
-        ['int', 181],
-        ['abs', 182],
-        ['usr', 183],
-        ['fre', 184],
-        ['pos', 185],
-        ['sqr', 186],
-        ['rnd', 187],
-        ['log', 188],
-        ['exp', 189],
-        ['cos', 190],
-        ['sin', 191],
-        ['tan', 192],
-        ['atn', 193],
-        ['len', 195],
-        ['val', 197],
-        ['asc', 198],
-        ['if', 139],
-        ['on', 145],
-        ['to', 164],
-        ['fn', 165],
-        ['or', 176],
-        ['go', 203],
+        ['restore', 140],	['reS', 140],		['resT', 140],		['restO', 140],		['restoR', 140],
+        ['input#', 132],	['iN', 132],		['inP', 132],		['inpU', 132],		['inpuT', 132],
+        ['return', 142],	['reT', 142],		['retU', 142],		['retuR', 142],
+        ['verify', 149],	['vE', 149],		['veR', 149],		['verI', 149],		['veriF', 149],
+        ['print#', 152],	['pR', 152],		['prI', 152],		['priN', 152],		['prinT', 152],
+        ['right$', 201],	['rI', 201],		['riG', 201],		['rigH', 201],		['righT', 201],
+        ['input', 133],		//No abbreviation
+        ['gosub', 141],		['goS', 141],		['gosU', 141],
+        ['print', 153],		['?', 153],
+        ['close', 160],		['clO', 160],		['cloS', 160],
+        ['left$', 200],		['leF', 200],		['lefT', 200],
+        ['next', 130],		['nE', 130],		['neX', 130],
+        ['data', 131],		['dA', 131],
+        ['read', 135],		['rE', 135],
+        ['goto', 137],		['gO', 137],		['goT', 137],
+        ['stop', 144],		['sT', 144],		['stO', 144],
+        ['wait', 146],		['wA', 146],		['waI', 146],
+        ['load', 147],		['lO', 147],		['loA', 147],
+        ['save', 148],		['sA', 148],		['saV', 148],
+        ['poke', 151],		['pO', 151],		['poK', 151],
+        ['cont', 154],		['cO', 154],		['coN', 154],
+        ['list', 155],		['lI', 155],		['liS', 155],
+        ['open', 159],		['oP', 159],		['opE', 159],
+        ['tab(', 163],		['tA', 163],		['taB', 163],
+        ['spc(', 166],		['sP', 166],		['spC', 166],
+        ['then', 167],		['tH', 167],		['thE', 167],
+        ['step', 169],		['stE', 169],
+        ['peek', 194],		['pE', 194],		['peE', 194],
+        ['str$', 196],		['stR', 196],
+        ['chr$', 199],		['cH', 199],		['chR', 199],
+        ['mid$', 202],		['mI', 202],		['miD', 202],
+        ['end', 128],		['eN', 128],
+        ['for', 129],		['fO', 129],
+        ['dim', 134],		['dI', 134],
+        ['let', 136],		['lE', 136],
+        ['run', 138],		['rU', 138],
+        ['rem', 143],		//No abbreviation
+        ['def', 150],		['dE', 150],
+        ['clr', 156],		['cL', 156],
+        ['cmd', 157],		['cM', 157],
+        ['sys', 158],		['sY', 158],
+        ['get', 161],		['gE', 161],
+        ['new', 162],		//No abbreviation
+        ['not', 168],		['nO', 168],
+        ['and', 175],		['aN', 175],
+        ['sgn', 180],		['sG', 180],
+        ['int', 181],		//No abbreviation
+        ['abs', 182],		['aB', 182],
+        ['usr', 183],		['uS', 183],
+        ['fre', 184],		['fR', 184],
+        ['pos', 185],		//No abbreviation
+        ['sqr', 186],		['sQ', 186],
+        ['rnd', 187],		['rN', 187],
+        ['log', 188],		//No abbreviation
+        ['exp', 189],		['eX', 189],
+        ['cos', 190],		//No abbreviation
+        ['sin', 191],		['sI', 191],
+        ['tan', 192],		//No abbreviation
+        ['atn', 193],		['aT', 193],
+        ['len', 195],		//No abbreviation
+        ['val', 197],		['vA', 197],
+        ['asc', 198],		['aS', 198],
+        ['if', 139],		//No abbreviation
+        ['on', 145],		//No abbreviation
+        ['to', 164],		//No abbreviation
+        ['fn', 165],		//No abbreviation
+        ['or', 176],		//No abbreviation
+        ['go', 203],		//No abbreviation
+
         ['+', 170],
         ['-', 171],
         ['*', 172],
@@ -280,7 +281,9 @@ $(document).ready(function () {
         ['^', 174],
         ['>', 177],
         ['=', 178],
-        ['<', 179]
+        ['<', 179],
+        ['{pi}', 255],
+        ['{pound}', 92]
     ];
 
     const TOKENS_UPPERCASE = TOKENS.map(token => [token[0].toUpperCase(), token[1]]);
@@ -318,8 +321,8 @@ $(document).ready(function () {
     ];
 
     function asciiToPetscii(o) {
-        // Check if character code is less than or equal to '@' or is '[' or ']'
-        if (o <= '@'.charCodeAt(0) || o === '['.charCodeAt(0) || o === ']'.charCodeAt(0)) {
+        // Check if character code is less than or equal to '@', '{pi}', '{pound},' '[' or ']'
+        if (o <= '@'.charCodeAt(0) || o === '{pi}'.charCodeAt(0) || o === '{pound}'.charCodeAt(0)|| o === '['.charCodeAt(0) || o === ']'.charCodeAt(0)) {
             return o;
         }
         // Check if character code is between 'a' and 'z'
