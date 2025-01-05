@@ -408,7 +408,7 @@ $(document).ready(function () {
     ];
 
     function asciiToPetscii(o) {
-        // Check if character code is less than or equal to '@', '{pi}', '{pound},' '[' or ']'
+        // Check if character code is less than or equal to '@', '{pi}', '{pound}', '[' or ']'
         if (o <= '@'.charCodeAt(0) || o === '{pi}'.charCodeAt(0) || o === '{pound}'.charCodeAt(0)|| o === '['.charCodeAt(0) || o === ']'.charCodeAt(0)) {
             return o;
         }
