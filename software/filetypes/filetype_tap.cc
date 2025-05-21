@@ -179,13 +179,13 @@ int FileTypeTap :: fetch_context_items(IndexedList<Action *> &list)
     int count = 0;
     uint32_t capabilities = getFpgaCapabilities();
     if(capabilities & CAPAB_C2N_STREAMER) {
-        list.append(new Action("Enter (index)", FileTypeTap :: enter_st, TAPFILE_INDEX, 0 ));
+        list.append(new Action("Enter to TAP index", FileTypeTap :: enter_st, TAPFILE_INDEX, 0 ));
         count++;
-        list.append(new Action("Run Tape", FileTypeTap :: execute_st, TAPFILE_RUN, 0 ));
+        list.append(new Action("Load/RUN TAP (normal mode)", FileTypeTap :: execute_st, TAPFILE_RUN, 0 ));
         count++;
-        list.append(new Action("Write to Tape", FileTypeTap :: execute_st, TAPFILE_WRITE, 0 ));
+        list.append(new Action("Write TAP to tape", FileTypeTap :: execute_st, TAPFILE_WRITE, 0 ));
         count++;
-        list.append(new Action("Start Tape", FileTypeTap :: execute_st, TAPFILE_START, 0 ));
+        list.append(new Action("Playback TAP", FileTypeTap :: execute_st, TAPFILE_START, 0 ));
         count++;
 
 /*
@@ -202,9 +202,9 @@ int FileTypeTap :: fetch_context_items(IndexedList<Action *> &list)
 
 void BrowsableTapEntry :: fetch_context_items(IndexedList<Action *> &list)
 {
-    list.append(new Action("Start From Here", FileTypeTap :: execute_st, TAPFILE_START_PARENT, tiEntry->offset ));
-    list.append(new Action("Run From Here",   FileTypeTap :: execute_st, TAPFILE_RUN_PARENT, tiEntry->offset ));
-    list.append(new Action("Write From Here", FileTypeTap :: execute_st, TAPFILE_WRITE_PARENT, tiEntry->offset ));
+    list.append(new Action("Playback TAP from here", FileTypeTap :: execute_st, TAPFILE_START_PARENT, tiEntry->offset ));
+    list.append(new Action("Load/RUN TAP from here (normal mode)",   FileTypeTap :: execute_st, TAPFILE_RUN_PARENT, tiEntry->offset ));
+    list.append(new Action("Write TAP to tape from here", FileTypeTap :: execute_st, TAPFILE_WRITE_PARENT, tiEntry->offset ));
 }
 
 FileType *FileTypeTap :: test_type(BrowsableDirEntry *obj)
