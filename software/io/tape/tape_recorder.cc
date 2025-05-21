@@ -99,8 +99,8 @@ SubsysResultCode_e TapeRecorder :: executeCommand(SubsysCommand *cmd)
 void TapeRecorder :: create_task_items(void)
 {
     TaskCategory *cat = TasksCollection :: getCategory("Tape", SORT_ORDER_TAPE);
-    myActions.sample  = new Action("Sample tape to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_SAMPLE_TAPE);
-    myActions.capture = new Action("Capture save to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_RECORD_TO_TAP);
+    myActions.sample  = new Action("Sample tape to new TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_SAMPLE_TAPE);
+    myActions.capture = new Action("Capture save to new TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_RECORD_TO_TAP);
     myActions.finish  = new Action("Finish Rec. to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_FINISH);
 
     cat->append(myActions.sample);
