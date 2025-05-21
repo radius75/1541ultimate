@@ -64,7 +64,7 @@ void TapeController :: poll_static(void *a)
 void TapeController :: create_task_items(void)
 {
     TaskCategory *cat = TasksCollection :: getCategory("Tape", SORT_ORDER_TAPE);
-    myActions.pause = new Action("Pause Tape Playback", SUBSYSID_TAPE_PLAYER, MENU_C2N_PAUSE);
+    myActions.pause = new Action("Pause TAP Playback", SUBSYSID_TAPE_PLAYER, MENU_C2N_PAUSE);
     myActions.resume = new Action("Resume Tape Playback", SUBSYSID_TAPE_PLAYER, MENU_C2N_RESUME);
     myActions.stop = new Action("Stop Tape Playback", SUBSYSID_TAPE_PLAYER, MENU_C2N_STOP);
     // myActions.rewind = new Action("Rewind Tape", SUBSYSID_TAPE_PLAYER, MENU_C2N_REWIND);
