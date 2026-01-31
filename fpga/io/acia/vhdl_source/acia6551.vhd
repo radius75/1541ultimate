@@ -231,8 +231,16 @@ begin
                         framing_err <= '0';
                         overrun_err <= '0';
                         rx_full <= '0';
+                        irq <= '0'; -- Explicitly clear IRQ when data is consumed
                     when c_addr_status_register =>
-                        irq <= '0';
+                        -- COMPATIBILITY FIX: Prevent losing interrupts during fast 
+                        -- polling in software like C*Base or during ATZ sequences.
+                        -- We only clear the IRQ if the receiver buffer is empty.
+                        if irq = '1' then
+                            if (rx_full = '0' and tx_empty = '1') or (tx_mode = "10") then
+                                irq <= '0';
+                            end if;
+                        end if;
                     when c_addr_command_register =>
                         null;
                     when c_addr_control_register =>
