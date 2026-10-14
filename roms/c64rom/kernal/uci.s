@@ -47,15 +47,15 @@
         SAVEADDR   = $C1
         SAVEEND    = $AE
 
-;        MY_OUTLEN       = $02BF ; Last byte of free area, before sprite 11
-;        UCI_PENDING_CMD = $02BE
-;        UCI_LAST_CMD    = $02BD
-;        UCI_LAST_SA     = $02BC
+        MY_OUTLEN       = $02BF ; Last byte of free area, before sprite 11
+        UCI_PENDING_CMD = $02BE
+        UCI_LAST_CMD    = $02BD
+        UCI_LAST_SA     = $02BC
 
-        MY_OUTLEN       = prty
-        UCI_PENDING_CMD = dpsw
-        UCI_LAST_CMD    = fsblk
-        UCI_LAST_SA     = syno
+;        MY_OUTLEN       = prty
+;        UCI_PENDING_CMD = dpsw
+;        UCI_LAST_CMD    = fsblk
+;        UCI_LAST_SA     = syno
 
 ulti_restor
             lda CMD_IF_COMMAND
@@ -287,15 +287,29 @@ _ok         pla
 
 
 _no_data_avail
+            ; Check EOI only when UCI has no data available.
+            bit STATUS
+            bvs _chrin_eoi
+
+            ; BIT changes flags, but preserves A.
             ; Current buffer is empty. Are we in the MORE data state?
             and #CMD_STATE_BITS
             cmp #CMD_STATE_MORE_DATA
             bne _read_error
 
             ; Get next block of data
-            jsr uci_ack
+            lda #CMD_NEXT_DATA
+            sta CMD_IF_CONTROL
+_chrin_ack  lda CMD_IF_CONTROL
+            and #CMD_NEXT_DATA
+            bne _chrin_ack
             jsr uci_wait_busy
             jmp my_chrin
+
+_chrin_eoi
+            lda #$0D
+            clc
+            rts
 
 _read_error
             ; No data could be read. We return $0D, and set EOF + Read Error
