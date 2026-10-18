@@ -47,15 +47,24 @@
         SAVEADDR   = $C1
         SAVEEND    = $AE
 
-        MY_OUTLEN       = $02BF ; Last byte of free area, before sprite 11
-        UCI_PENDING_CMD = $02BE
-        UCI_LAST_CMD    = $02BD
-        UCI_LAST_SA     = $02BC
+;        MY_OUTLEN       = $02BF ; Last byte of free area, before sprite 11
+;        UCI_PENDING_CMD = $02BE
+;        UCI_LAST_CMD    = $02BD
+;        UCI_LAST_SA     = $02BC
 
 ;        MY_OUTLEN       = prty
 ;        UCI_PENDING_CMD = dpsw
 ;        UCI_LAST_CMD    = fsblk
 ;        UCI_LAST_SA     = syno
+
+        ; Relocate UCI variables to avoid C64 OS memory conflicts.
+        ; C64 OS uses $02BC-$02BF for system key modifiers.
+        ; New addresses $029D-$02A0 suggested by Greg Nacu.
+        ; Tested with C64 OS on Ultimate II+: PASS.
+        MY_OUTLEN       = $029D
+        UCI_PENDING_CMD = $029E
+        UCI_LAST_CMD    = $029F
+        UCI_LAST_SA     = $02A0
 
 ulti_restor
             lda CMD_IF_COMMAND
