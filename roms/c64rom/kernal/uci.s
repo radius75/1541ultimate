@@ -111,6 +111,9 @@ ld3         ldx SECADDR
             lda CMD_IF_STATUS
             jsr uci_ack ; restores A
             beq ld4 ; all OK when zero
+            lda STATUS
+            ora #$42 ; preserve status flags
+            sta STATUS
             jmp error4
 
 ld4         jsr loding ; print LOADING
