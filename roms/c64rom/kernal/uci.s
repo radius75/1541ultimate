@@ -405,7 +405,10 @@ _my_chkin   sta dfltn
 
 _chkin_su   jsr uci_setup_cmd
             jsr uci_execute
-_chkin_cont clc
+_chkin_cont php
+            ldx dfltn
+            plp
+            clc
             rts
 
 ; $FFC9   
