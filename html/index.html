@@ -109,6 +109,15 @@ $(document).ready(async function () {
     async function doReboot() {
         let params = {};
         let [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:reboot", params);
+        // Reboot Machine deactivates the cartridge on the Ultimate. Clear the
+        // locally cached CRT metadata only after a successful API response.
+        if (status_code === 200) {
+            $('#crtinfo').hide();
+            $('#crtfilename, #crtfilesize, #crtname, #crttype, #crtversion').text('');
+            $('#crtinfoerror').text('').hide();
+            // Forget the selected CRT metadata after a successful machine reboot.
+            try { sessionStorage.removeItem('ultimateLoaderCrtInfo'); } catch (error) {}
+        }
     };
 
     $('#domenubutton').click(function(event){
@@ -178,39 +187,197 @@ $(document).ready(async function () {
         event.preventDefault(); // Prevents the default action of the anchor tag
         $(".page").hide();
         $("#runner").show();
+        refreshDrivePowerStates();
     });
 
-    $('#runnersubmit').click(function(e) {
-        e.preventDefault();
-        submitRunner();
-    });
+    // Synchronize both drive panels with the Ultimate when the runner tab opens.
+    // Request IDs prevent older API responses from overwriting newer state.
+    const drivePowerRequest = {a: 0, b: 0};
+    // Each drive has its own message timeout and pending power operation.
+    const driveStatusTimers = {a: null, b: null};
+    // Keep mount confirmation timers independent for Drive A and Drive B.
+    const driveMountTimers = {a: null, b: null};
+    const driveBusy = {a: false, b: false};
+    const driveRemoving = {a: false, b: false};
 
-    $('#runnerfile').on("change", function () {
-        submitRunner();
-    });
-
-    $('#runnerdropzone').on("dragover", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        $(this).addClass("dragover");
-    });
-
-    $('#runnerdropzone').on("dragleave", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        $(this).removeClass("dragover");
-    });
-
-    $('#runnerdropzone').on("drop", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        $(this).removeClass("dragover");
-
-        const files = e.originalEvent.dataTransfer.files;
-        if (files.length > 0) {
-            $('#runnerfile').prop("files", files);
-            submitRunner();
+    // Show feedback only beside the affected drive. Successful operations clear
+    // after three seconds; failures remain visible for troubleshooting.
+    function showDriveStatus(drive, message, autoClear) {
+        if (driveStatusTimers[drive] !== null) {
+            clearTimeout(driveStatusTimers[drive]);
+            driveStatusTimers[drive] = null;
         }
+        const label = $('#drivepowerstatus-' + drive);
+        label.text(message);
+        if (autoClear) {
+            driveStatusTimers[drive] = setTimeout(function() {
+                if (label.text() === message) label.text('');
+                driveStatusTimers[drive] = null;
+            }, 3000);
+        }
+    }
+
+    // Populate the drive details returned by /v1/drives. Disable Remove Disk
+    // when the API reports no mounted image or no usable drive information.
+    function updateDriveInfo(drive, info) {
+        const panel = $('#driveinfo-' + drive);
+        if (!info) {
+            panel.find('[data-field]').text('—');
+            $('#driveremove-' + drive).prop('disabled', true);
+            return;
+        }
+        const fields = {
+            bus_id: info.bus_id,
+            type: info.type,
+            rom: info.rom,
+            image_file: info.image_file
+        };
+        Object.keys(fields).forEach(function(field) {
+            const value = fields[field];
+            panel.find('[data-field="' + field + '"]').text(value === undefined || value === null || value === '' ? '—' : String(value));
+        });
+        $('#driveremove-' + drive).prop('disabled', !info.image_file || driveRemoving[drive]);
+    }
+
+    // GET /v1/drives returns both drives. Update only targetDrive when requested,
+    // but refresh both panels when the loader tab is opened.
+    // Per-drive request IDs prevent an older response from overwriting newer data.
+    async function refreshDrivePowerStates(targetDrive = null) {
+        const drives = targetDrive ? [targetDrive] : ['a', 'b'];
+        const requests = {};
+        drives.forEach(function(drive) { requests[drive] = ++drivePowerRequest[drive]; });
+        let status, data;
+        try {
+            [status, data] = await make_get_request('http://' + serverIP + '/v1/drives');
+        } catch (error) {
+            status = 0;
+            data = null;
+        }
+        const entries = status === 200 && data && Array.isArray(data.drives) ? data.drives : [];
+        drives.forEach(function(drive) {
+            if (requests[drive] !== drivePowerRequest[drive] || driveBusy[drive] || driveRemoving[drive]) return;
+            const entry = entries.find(function(item) { return item && item[drive]; });
+            const checkbox = $('#drivepower-' + drive);
+            if (!entry || typeof entry[drive].enabled !== 'boolean') {
+                checkbox.prop('checked', false).prop('disabled', true);
+                updateDriveInfo(drive, null);
+                showDriveStatus(drive, status === 200 ? 'Unavailable' : 'Status error', false);
+            } else {
+                checkbox.prop('checked', entry[drive].enabled).prop('disabled', false);
+                updateDriveInfo(drive, entry[drive]);
+                // Do not replace feedback while its three-second timer is running.
+                // A completed timer already removes the message itself.
+                if (driveStatusTimers[drive] === null) {
+                    const message = $('#drivepowerstatus-' + drive).text();
+                    if (message !== 'Update failed' && message !== 'Reset failed' &&
+                        message !== 'Remove failed' && message !== 'Removing disk...') {
+                        showDriveStatus(drive, '', false);
+                    }
+                }
+            }
+        });
+    }
+
+    // A checkbox changes only its own drive; read back the actual state afterward.
+    // Disabling it during the request prevents accidental repeated toggles.
+    ['a', 'b'].forEach(function(drive) {
+        $('#drivepower-' + drive).on('change', async function() {
+            const checkbox = $(this);
+            const requestedState = checkbox.prop('checked');
+            driveBusy[drive] = true;
+            checkbox.prop('disabled', true);
+            showDriveStatus(drive, requestedState ? 'Turning on...' : 'Turning off...', false);
+            let success = false;
+            try {
+                const [status, data] = await make_put_request(
+                    'http://' + serverIP + '/v1/drives/' + drive + (requestedState ? ':on' : ':off'), {});
+                success = status === 200 && !(data && Array.isArray(data.errors) && data.errors.length);
+            } catch (error) {
+                success = false;
+            } finally {
+                driveBusy[drive] = false;
+            }
+            showDriveStatus(drive, success ? (requestedState ? 'Drive ON' : 'Drive OFF') : 'Update failed', success);
+            await refreshDrivePowerStates(drive);
+        });
+    });
+
+    // Reset only the selected emulated drive, leaving its mounted image in place.
+    ['a', 'b'].forEach(function(drive) {
+        $('#drivereset-' + drive).on('click', async function() {
+            const button = $(this);
+            button.prop('disabled', true);
+            showDriveStatus(drive, 'Resetting...', false);
+            try {
+                const [status, data] = await make_put_request(
+                    'http://' + serverIP + '/v1/drives/' + drive + ':reset', {});
+                const success = status === 200 && !(data && Array.isArray(data.errors) && data.errors.length);
+                showDriveStatus(drive, success ? 'Drive reset' : 'Reset failed', success);
+            } catch (error) {
+                showDriveStatus(drive, 'Reset failed', false);
+            } finally {
+                button.prop('disabled', false);
+            }
+        });
+    });
+
+    // Remove only the selected disk. Keep the button locked during the API call
+    // and refresh, then restore it based on the last known mounted image.
+    ['a', 'b'].forEach(function(drive) {
+        $('#driveremove-' + drive).on('click', async function() {
+            if (driveRemoving[drive]) return;
+            if (!window.confirm('Remove the disk from Drive ' + drive.toUpperCase() + '?')) return;
+            const button = $(this);
+            driveRemoving[drive] = true;
+            button.prop('disabled', true);
+            showDriveStatus(drive, 'Removing disk...', false);
+            try {
+                const [status, data] = await make_put_request('http://' + serverIP + '/v1/drives/' + drive + ':remove', {});
+                const success = status === 200 && !(data && Array.isArray(data.errors) && data.errors.length);
+                showDriveStatus(drive, success ? 'Disk removed' : 'Remove failed', success);
+            } catch (error) {
+                showDriveStatus(drive, 'Remove failed', false);
+            } finally {
+                driveRemoving[drive] = false;
+                // Re-enable based on the previous image if the status request fails.
+                // A successful refresh will replace this with the actual device state.
+                button.prop('disabled', !$('#driveinfo-' + drive + ' [data-field="image_file"]').text().trim() ||
+                    $('#driveinfo-' + drive + ' [data-field="image_file"]').text().trim() === '—');
+                await refreshDrivePowerStates(drive);
+            }
+        });
+        // The REST endpoint returns both drives; only this panel is updated.
+        $('#driverefresh-' + drive).on('click', function() { refreshDrivePowerStates(drive); });
+    });
+
+    // Give Drive A and B independent file selectors and drop zones.
+    // Both call submitRunner with the target drive, rather than sharing a fixed destination.
+    ["a", "b"].forEach(function (drive) {
+        const suffix = drive === "a" ? "" : "b";
+        const fileSelector = '#runnerfile' + suffix;
+        const zoneSelector = '#runnerdropzone' + suffix;
+        $('#runnersubmit' + suffix).click(function (e) {
+            e.preventDefault();
+            submitRunner(drive);
+        });
+        $(fileSelector).on("change", function () { submitRunner(drive); });
+        $(zoneSelector).on("dragover", function (e) {
+            e.preventDefault(); e.stopPropagation();
+            $(this).addClass("dragover");
+        });
+        $(zoneSelector).on("dragleave", function (e) {
+            e.preventDefault(); e.stopPropagation();
+            $(this).removeClass("dragover");
+        });
+        $(zoneSelector).on("drop", function (e) {
+            e.preventDefault(); e.stopPropagation();
+            $(this).removeClass("dragover");
+            const files = e.originalEvent.dataTransfer.files;
+            if (files.length > 0) {
+                $(fileSelector).prop("files", files);
+                submitRunner(drive);
+            }
+        });
     });
 
     function getFileExtension(filename) {
@@ -236,44 +403,128 @@ $(document).ready(async function () {
         }
     }
 
-    // PRG/CRT/SID loader, and disk-image mounter
-    const DISK_IMAGE_TYPES = ["D64", "G64", "D71", "G71", "D81"];
-    // This page offers no drive selection, so disk images go to drive A.
-    const MOUNT_DRIVE = "a";
+    // Decode the selected CRT file locally in the browser. This is file metadata,
+    // not a query of the cartridge currently active on the Ultimate.
+    // Keep only the selected CRT metadata for this browser tab, not the file itself.
+    // sessionStorage survives F5/Ctrl+F5 but is cleared when the tab session ends.
+    const CRT_INFO_STORAGE_KEY = 'ultimateLoaderCrtInfo';
 
-    async function submitRunner() {
-        let file = $('#runnerfile')[0].files[0];
-        let extension = getFileExtension(file.name);
-        let mounting = DISK_IMAGE_TYPES.includes(extension);
+    function saveCrtInfo() {
+        try {
+            const info = {};
+            ['crtfilename', 'crtfilesize', 'crtname', 'crttype', 'crtversion', 'crtinfoerror'].forEach(function(id) {
+                info[id] = $('#' + id).text();
+            });
+            sessionStorage.setItem(CRT_INFO_STORAGE_KEY, JSON.stringify(info));
+        } catch (error) {
+            // Storage may be disabled; CRT information still works for this page load.
+        }
+    }
+
+    function restoreCrtInfo() {
+        try {
+            const saved = sessionStorage.getItem(CRT_INFO_STORAGE_KEY);
+            if (!saved) return;
+            const info = JSON.parse(saved);
+            if (!info || typeof info.crtfilename !== 'string' || !info.crtfilename) return;
+            ['crtfilename', 'crtfilesize', 'crtname', 'crttype', 'crtversion'].forEach(function(id) {
+                $('#' + id).text(typeof info[id] === 'string' ? info[id] : '—');
+            });
+            const error = typeof info.crtinfoerror === 'string' ? info.crtinfoerror : '';
+            $('#crtinfoerror').text(error).toggle(!!error);
+            $('#crtinfo').show();
+        } catch (error) {
+            // Ignore unavailable storage or malformed data.
+        }
+    }
+
+    // Restore the last selected CRT metadata after a browser refresh.
+    restoreCrtInfo();
+
+    // Read the standard 64-byte CRT header: signature, hardware ID, name and version.
+    // Invalid or truncated headers are reported without blocking the file upload.
+    async function displayCrtInfo(file) {
+        const panel = $('#crtinfo');
+        panel.hide();
+        if (!file || getFileExtension(file.name) !== 'CRT') {
+            try { sessionStorage.removeItem(CRT_INFO_STORAGE_KEY); } catch (error) {}
+            return;
+        }
+        $('#crtfilename').text(file.name);
+        $('#crtfilesize').text(file.size.toLocaleString() + ' bytes');
+        $('#crtname, #crttype, #crtversion').text('—');
+        $('#crtinfoerror').text('').hide();
+        panel.show();
+        try {
+            const bytes = new Uint8Array(await file.slice(0, 64).arrayBuffer());
+            const signature = 'C64 CARTRIDGE   ';
+            if (bytes.length < 64 || !signature.split('').every((c, i) => bytes[i] === c.charCodeAt(0))) {
+                $('#crtinfoerror').text('Invalid or incomplete CRT header.').show();
+                saveCrtInfo();
+                return;
+            }
+            const hardwareId = (bytes[0x16] << 8) | bytes[0x17];
+            const cartridgeName = Array.from(bytes.slice(0x20, 0x40))
+                .map(c => c ? String.fromCharCode(c) : ' ').join('').trim();
+            $('#crtname').text(cartridgeName || '—');
+            $('#crttype').text(hardwareId);
+            $('#crtversion').text(bytes[0x14] + '.' + String(bytes[0x15]).padStart(2, '0'));
+        } catch (error) {
+            $('#crtinfoerror').text('Could not read CRT information.').show();
+        }
+        saveCrtInfo();
+    }
+
+    // Drive A runs PRG/CRT/SID and mounts disks; Drive B only mounts disk images.
+    // The upload request specifies the disk type because raw data has no filename.
+    const DISK_IMAGE_TYPES = ["D64", "G64", "D71", "G71", "D81"];
+
+    // Route the chosen file to the appropriate REST endpoint and show upload
+    // feedback in the corresponding drive panel.
+    async function submitRunner(drive = "a") {
+        const suffix = drive === "a" ? "" : "b";
+        const file = $('#runnerfile' + suffix)[0].files[0];
+        if (!file) return false;
+        const extension = getFileExtension(file.name);
+        if (drive === "a" && extension === "CRT") await displayCrtInfo(file);
+        const mounting = DISK_IMAGE_TYPES.includes(extension);
         let params = {};
         let route = null;
-        $("#runmsg").hide();
-        $("#runok").hide();
+        // Cancel an older mount confirmation before starting a new operation.
+        if (driveMountTimers[drive] !== null) {
+            clearTimeout(driveMountTimers[drive]);
+            driveMountTimers[drive] = null;
+        }
+        $('#runmsg' + suffix).hide();
+        $('#runok' + suffix).hide();
 
         if (mounting) {
-            route = `/v1/drives/${MOUNT_DRIVE}:mount`;
-            // The upload carries no file name, so the device cannot take the
-            // image type from an extension and has to be told it here.
+            route = `/v1/drives/${drive}:mount`;
+            // The raw upload has no filename: specify the image type explicitly.
             params = {"type": extension.toLowerCase()};
-        }
-        else if (extension === "PRG")
+        } else if (drive === "a" && extension === "PRG")
             route = "/v1/runners:run_prg";
-        else if (extension === "CRT")
+        else if (drive === "a" && extension === "CRT")
             route = "/v1/runners:run_crt";
-        else if (extension === "SID")
+        else if (drive === "a" && extension === "SID")
             route = "/v1/runners:sidplay";
         else
-            alert("Unsupported file extension: '."+ extension.toLowerCase()+"'");
+            alert("Unsupported file extension: '." + extension.toLowerCase() + "'");
 
-        if (route === null)
-            return false;
-
-        let [status_code, content] = await make_post_request("http://" + serverIP + route, params, file);
+        if (route === null) return false;
+        const [status_code, content] = await make_post_request("http://" + serverIP + route, params, file);
         if (status_code !== 200)
-            $("#runmsg").show();
-        else if (mounting)
-            // A mounted disk changes nothing on screen, unlike a program that runs.
-            $("#runok").show();
+            $('#runmsg' + suffix).show();
+        else if (mounting) {
+            $('#runok' + suffix).show();
+            // Hide successful mount feedback after three seconds for this drive only.
+            driveMountTimers[drive] = setTimeout(function() {
+                $('#runok' + suffix).hide();
+                driveMountTimers[drive] = null;
+            }, 3000);
+            // Read back the mounted image path immediately after a successful upload.
+            await refreshDrivePowerStates(drive);
+        }
         return status_code === 200;
     }
 
@@ -1548,6 +1799,16 @@ function disassembler(startInt, byteArray) {
         padding: 20px;
         display:none;
     }
+    .drive-reset-button { margin-right: 12px; cursor: pointer; }
+    .drive-power-label { display: inline-block; margin-bottom: 12px; cursor: pointer; }
+    .drive-info { font-size: 0.9em; margin: 4px 0 12px; line-height: 1.6; overflow-wrap: anywhere; }
+    .drive-info button { margin: 6px 8px 0 0; cursor: pointer; }
+    .drive-power-status { font-size: 0.85em; color: #777; }
+    .runner-drives { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+    .runner-drive { flex: 1 1 320px; min-width: 0; max-width: 625px; }
+    .runner-drive .dropzone { box-sizing: border-box; }
+    .runner-drive #runmsg, .runner-drive #runmsgb,
+    .runner-drive #runok, .runner-drive #runokb { box-sizing: border-box; max-width: 100%; }
     .dropzone {
         max-width: 600px;
         min-height: 120px;
@@ -1563,7 +1824,7 @@ function disassembler(startInt, byteArray) {
         color: #4caf50;
         background-color: #f6fff6;
     }
-    #sidmsg, #runmsg, #basicmsg {
+    #sidmsg, #runmsg, #runmsgb, #basicmsg {
         flex-grow: 1;
         margin-top: 20px;
         padding: 20px;
@@ -1572,7 +1833,7 @@ function disassembler(startInt, byteArray) {
         color: white;
         width: 400px;
     }
-    #runok {
+    #runok, #runokb {
         flex-grow: 1;
         margin-top: 20px;
         padding: 20px;
@@ -1818,8 +2079,19 @@ div#left-nav a.darkmode {
 
         <div id="runner" class="page">
             <h1>PRG / CRT / Disk Loader</h1>
-            <p>Remotely run a program or cartridge on your Ultimate, or mount a disk image in drive A.</p>
-
+            <p>Remotely run a program or cartridge on your Ultimate, or mount a disk image in drive A or B.</p>
+            <div class="runner-drives">
+            <div class="runner-drive">
+            <h2>Drive A</h2>
+            <button type="button" class="drive-reset-button" id="drivereset-a" title="Reset Drive A without unmounting the disk">Reset Drive A</button> <label class="drive-power-label" title="Enable or disable Drive A"><input type="checkbox" id="drivepower-a" disabled> Enabled</label> <span class="drive-power-status" id="drivepowerstatus-a"></span>
+            <div class="drive-info" id="driveinfo-a">
+                <div>Device ID: <span data-field="bus_id">—</span></div>
+                <div>Drive Type: <span data-field="type">—</span></div>
+                <div>ROM: <span data-field="rom">—</span></div>
+                <div>Mounted Image: <span data-field="image_file">—</span></div>
+                <button type="button" id="driveremove-a" title="Remove the mounted disk image from Drive A" disabled>Remove Disk</button>
+                <button type="button" id="driverefresh-a" title="Refresh Drive A information from the Ultimate">Refresh Info</button>
+            </div>
             <div id="runnerdropzone" class="dropzone" title="Drop file to be loaded here">
                 Drag & drop PRG, CRT, SID or disk image file here
                 <br />
@@ -1834,6 +2106,42 @@ div#left-nav a.darkmode {
 
             <div id="runmsg">An error has occurred when loading the selected file.</div>
             <div id="runok">The disk image has been mounted in drive A.</div>
+            <div id="crtinfo" class="drive-info" style="display:none; margin-top:12px; overflow-wrap:anywhere;">
+                <strong>Cartridge Information (selected file)</strong>
+                <div>File Name: <span id="crtfilename"></span></div>
+                <div>Cartridge Name: <span id="crtname"></span></div>
+                <div>Hardware Type ID: <span id="crttype"></span></div>
+                <div>CRT Version: <span id="crtversion"></span></div>
+                <div>File Size: <span id="crtfilesize"></span></div>
+                <div id="crtinfoerror" style="display:none;"></div>
+            </div>
+            </div>
+            <div class="runner-drive">
+            <h2>Drive B</h2>
+            <button type="button" class="drive-reset-button" id="drivereset-b" title="Reset Drive B without unmounting the disk">Reset Drive B</button> <label class="drive-power-label" title="Enable or disable Drive B"><input type="checkbox" id="drivepower-b" disabled> Enabled</label> <span class="drive-power-status" id="drivepowerstatus-b"></span>
+            <div class="drive-info" id="driveinfo-b">
+                <div>Device ID: <span data-field="bus_id">—</span></div>
+                <div>Drive Type: <span data-field="type">—</span></div>
+                <div>ROM: <span data-field="rom">—</span></div>
+                <div>Mounted Image: <span data-field="image_file">—</span></div>
+                <button type="button" id="driveremove-b" title="Remove the mounted disk image from Drive B" disabled>Remove Disk</button>
+                <button type="button" id="driverefresh-b" title="Refresh Drive B information from the Ultimate">Refresh Info</button>
+            </div>
+            <div id="runnerdropzoneb" class="dropzone" title="Drop a disk image to mount in drive B">
+                Drag & drop disk image file here
+                <br />
+                <p style="font-size: 4em">&#x21EA;</p>
+                <br />
+                or press button to browse
+                <br /><br />
+                <input type="file" id="runnerfileb" name="file" accept=".d64,.g64,.d71,.g71,.d81,.D64,.G64,.D71,.G71,.D81" title="Select a disk image to mount in drive B">
+                <br /><br />
+                <input type="button" id="runnersubmitb" value="Load Again!" title="Upload and mount the selected disk image in drive B">
+            </div>
+            <div id="runmsgb">An error has occurred when mounting the selected disk image in drive B.</div>
+            <div id="runokb">The disk image has been mounted in drive B.</div>
+            </div>
+            </div>
         </div>
 
         <div id="livemon" class="page">
