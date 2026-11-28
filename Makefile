@@ -72,12 +72,14 @@ openapi_validate:
 # these need a host g++.
 host_tests:
 	@$(MAKE) -C software/filemanager/tests
+	@$(MAKE) -C software/filetypes/tests
 	@$(MAKE) -C software/io/usb/tests
 	@$(MAKE) -C target/pc/linux/configiotest test
 	@$(MAKE) -C target/pc/linux/powerstate test
 	@$(MAKE) -C target/pc/linux/wolmagic test
 	@$(MAKE) -C target/pc/linux/wifireply test
 	@$(MAKE) -C software/io/wifi/tests
+	@$(MAKE) -C software/io/tape/tests
 	@$(MAKE) -C software/wifi/tests
 	@$(MAKE) -C software/wifi/uart_tests
 	@$(MAKE) -C target/pc/linux/recoverymanifest test
@@ -87,7 +89,13 @@ host_tests:
 	@$(MAKE) -C target/pc/linux/sdcard test
 	@$(MAKE) -C target/pc/linux/rasterwait test
 	@$(MAKE) -C target/pc/linux/socketdma test
+	@$(MAKE) -C target/pc/linux/syslog test
+	@$(MAKE) -C target/pc/linux/dhcp test
+	@$(MAKE) -C target/pc/linux/confighook test
 	@$(MAKE) -C target/pc/linux/ucitargets test
+	@$(MAKE) -C target/pc/linux/httpdbody test
+	@$(MAKE) -C software/io/acia/tests
+	@$(MAKE) -C software/userinterface/tests
 
 esp32: esp32_raw_u64 esp32_raw_c3 esp32_u64ctrl
 
